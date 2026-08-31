@@ -112,6 +112,7 @@ import type {
   TuiRewindMode,
   TuiRewindPromptDecision,
 } from './extension-events.js'
+import { transcriptImagesOf, type TranscriptImage } from './transcript-images.js'
 
 /** `tui/input` return normalization: transform/handled/cancel or no opinion.
  *  A blank `{ text }` rewrite is NOT a decision — it is logged and the chain
@@ -477,6 +478,8 @@ export interface ChatRow {
   /** Actual execution location for `!command` rows. */
   executionTarget?: string
   text: string
+  /** Durable session image blocks, loaded lazily through the attachment store. */
+  images?: readonly TranscriptImage[]
   /** True while an assistant step is still streaming chunks. */
   streaming?: boolean
   /** Present on `tool` rows; the card model. */
@@ -7632,6 +7635,9 @@ ${output}
   const firstTextOf = (content: readonly ContentBlock[] | undefined): string =>
     (content ?? []).find(block => block.type === 'text')?.text.trim() ?? ''
 
+  const transcriptImages = (content: readonly ContentBlock[] | undefined): readonly TranscriptImage[] =>
+    transcriptImagesOf(content, () => ctx.get('attachments'))
+
   const ensureStreaming = (seq?: number): ChatRow => {
     if (streaming !== undefined) return streaming
     // A reconnect can replay the first delta after the sealed message was
@@ -7897,9 +7903,16 @@ ${output}
         // renders direct human prompts only.
         if (event.data.source.kind !== 'user') break
         const text = firstTextOf(event.data.content)
-        if (text) {
-          state.rows.push({ id: nextRowId, kind: 'user', text, seq: event.seq })
-          state.lastUserText = text
+        const images = transcriptImages(event.data.content)
+        if (text || images.length > 0) {
+          state.rows.push({
+            id: nextRowId,
+            kind: 'user',
+            text,
+            ...(images.length === 0 ? {} : { images }),
+            seq: event.seq,
+          })
+          state.lastUserText = text || t('transcript-image-message', { count: images.length })
           // The context estimate counts everything sent to the model —
           // typed text AND the `@`-mention attachment blocks.
           state.contextSegments.prompt += estimateTokens(textOf(event.data.content))
@@ -7972,6 +7985,7 @@ ${output}
         if (handledAssistantMessages.has(event.seq)) break
         handledAssistantMessages.add(event.seq)
         const text = textOf(event.data.message.content)
+        const images = transcriptImages(event.data.message.content)
         // Replay without chunk deltas (prepareReplayEvents drops settled
         // ones): rebuild the reasoning row from the sealed message's
         // reasoning blocks. Replay-only — gated on the `replaying` flag,
@@ -8010,7 +8024,7 @@ ${output}
           ? stepKey(msgTurn, msgStep)
           : undefined
         const row = (msgKey !== undefined ? assistantRowsByStep.get(msgKey) : undefined) ?? streaming ??
-          (text
+          (text || images.length > 0
             ? ([...state.rows].reverse().find(candidate =>
                 candidate.kind === 'assistant' && candidate.seq === event.seq,
               ) ?? ensureStreaming(event.seq))
@@ -8019,6 +8033,7 @@ ${output}
           if (msgKey !== undefined) assistantRowsByStep.set(msgKey, row)
           row.time = event.time
           if (text) row.text = text
+          row.images = images.length === 0 ? undefined : images
           row.streaming = false
           markStreamingChanged()
           // Live settles keep the smooth-reveal cursor alive (a one-shot
@@ -8176,6 +8191,8 @@ ${output}
       case 'tool/result': {
         const card = toolCards.get(event.data.message.source.callId)
         if (card !== undefined && card.tool !== undefined) {
+          const images = transcriptImages(event.data.message.content)
+          card.images = images.length === 0 ? undefined : images
           card.tool.durationMs = Math.max(0, Date.now() - card.tool.startedAt)
           const failure = event.data.error
           if (failure !== undefined) {

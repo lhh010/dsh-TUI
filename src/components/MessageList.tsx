@@ -235,6 +235,7 @@ export function MessageList({
   onOpenSubagent,
   onOpenJobs,
   onOpenFile,
+  onPreviewImage,
 }: {
   rows: readonly ChatRow[]
   expanded: boolean
@@ -341,6 +342,8 @@ export function MessageList({
   onOpenJobs?: () => void
   /** 点击工具卡内的文件路径（打开文件操作菜单）。 */
   onOpenFile?: (path: string) => void
+  /** 点击 transcript 缩略图（打开共享的大图预览 overlay）。 */
+  onPreviewImage?: (image: TranscriptImage) => void
 }) {
   const hiddenCount = rows.length - MAX_RENDERED_ROWS
   // The thinking filter runs BEFORE virtualization so window indices line up.
@@ -1261,6 +1264,7 @@ export function MessageList({
               onOpenSubagent={onOpenSubagent}
               onOpenJobs={onOpenJobs}
               onOpenFile={onOpenFile}
+              onPreviewImage={onPreviewImage}
               setRowRef={setRowRef}
             />
           )
@@ -1343,6 +1347,7 @@ type MemoRowProps = {
   onOpenSubagent: ((agentId: string) => void) | undefined
   onOpenJobs: (() => void) | undefined
   onOpenFile: ((path: string) => void) | undefined
+  onPreviewImage: ((image: TranscriptImage) => void) | undefined
   setRowRef: (rowId: number, el: DOMElement | null) => void
 }
 
@@ -1408,6 +1413,7 @@ function TranscriptRow({
   onOpenSubagent,
   onOpenJobs,
   onOpenFile,
+  onPreviewImage,
   setRowRef,
 }: MemoRowProps): React.ReactNode {
   const ref = React.useCallback(
@@ -1450,7 +1456,7 @@ function TranscriptRow({
           )}
           {images !== undefined && (
             <Box marginTop={text === '' && addMargin ? 1 : 0}>
-              <TranscriptImages images={images} />
+              <TranscriptImages images={images} onPreview={onPreviewImage} />
             </Box>
           )}
         </Box>
@@ -1473,7 +1479,7 @@ function TranscriptRow({
               is stripped here: the live working line on the status bar
               already shows it. */}
             <StreamingMarkdown>{stripNarration(text)}</StreamingMarkdown>
-            {images !== undefined && <TranscriptImages images={images} indent={0} />}
+            {images !== undefined && <TranscriptImages images={images} indent={0} onPreview={onPreviewImage} />}
           </Box>
         </Box>
       ) : (
@@ -1499,7 +1505,7 @@ function TranscriptRow({
             isSelected={isSelected}
             isExpanded={isExpanded}
           />
-          {images !== undefined && <TranscriptImages images={images} />}
+          {images !== undefined && <TranscriptImages images={images} onPreview={onPreviewImage} />}
         </Box>
       )
     case 'reasoning': {
@@ -1568,7 +1574,7 @@ function TranscriptRow({
             onClick={foldOnClick}
             onOpenFile={onOpenFile}
           />
-          {images !== undefined && <TranscriptImages images={images} indent={4} />}
+          {images !== undefined && <TranscriptImages images={images} indent={4} onPreview={onPreviewImage} />}
         </Box>
       )
     }
